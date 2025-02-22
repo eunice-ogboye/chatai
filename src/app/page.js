@@ -2,152 +2,146 @@
 
 import { useState } from "react";
 
-export default function Home() {
-  const [inputText, setInputText] = useState("");
-  const [outputText, setOutputText] = useState("");
+export default function TextProcessor() {
+  const [text, setText] = useState("");
+  const [messages, setMessages] = useState([]);
   const [detectedLanguage, setDetectedLanguage] = useState("");
-  const [summary, setSummary] = useState("");
-  const [translation, setTranslation] = useState("");
-  const [targetLanguage, setTargetLanguage] = useState("en"); // Default to English
+  const [showSummarizeButton, setShowSummarizeButton] = useState(false);
+  const [showTranslateButton, setShowTranslateButton] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState("en");
 
-  // Handle sending text
   const handleSend = async () => {
-    if (!inputText.trim()) return;
+    if (!text.trim()) return;
 
-    setOutputText(inputText);
+    const newMessages = [...messages, { sender: "You", text }];
+    setMessages(newMessages);
+    setText("");
 
-    // Detect language using Chrome AI API
-    const language = await detectLanguage(inputText);
+    const language = await detectLanguage(text);
     setDetectedLanguage(language);
+    newMessages.push({ sender: "AI", text: `Detected Language: ${language}` });
 
-    setInputText(""); // Clear input
-  };
-
-  // Handle summarization
-  const handleSummarize = async () => {
-    if (outputText.length > 150 && detectedLanguage === "en") {
-      const summaryText = await summarizeText(outputText);
-      setSummary(summaryText);
+    if (language === "en" && text.length > 150) {
+      setShowSummarizeButton(true);
     } else {
-      alert("Summarization is only available for English text longer than 150 characters.");
+      setShowSummarizeButton(false);
     }
+
+    setShowTranslateButton(true);
+    setMessages([...newMessages]);
   };
 
-  // Handle translation
+  const handleSummarize = async () => {
+    if (!messages.length) return;
+    const lastUserMessage = messages.findLast(msg => msg.sender === "You");
+    if (!lastUserMessage) return;
+    
+    const summary = summarizeText(lastUserMessage.text);
+    setMessages([...messages, { sender: "AI", text: `Summary: ${summary}` }]);
+  };
+
   const handleTranslate = async () => {
-    if (outputText) {
-      const translatedText = await translateText(outputText, targetLanguage);
-      setTranslation(translatedText);
-    }
+    if (!messages.length) return;
+    const lastUserMessage = messages.findLast(msg => msg.sender === "You");
+    if (!lastUserMessage) return;
+    
+    const translatedText = await getTranslation(lastUserMessage.text, selectedLanguage);
+    setMessages([...messages, { sender: "AI", text: `Translated: ${translatedText}` }]);
   };
 
-  // Language detection using Chrome's AI API
-  const detectLanguage = async (text) => {
+  async function detectLanguage(inputText) {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(inputText)}`;
     try {
-      const processor = new TextProcessor();
-      const detection = await processor.detectLanguage(text);
-      return detection.language;
+      const response = await fetch(url);
+      const data = await response.json();
+      return data[2] || "Unknown";
     } catch (error) {
-      console.error("Language detection error:", error);
-      alert("Failed to detect language.");
-      return "";
+      return "Unknown";
     }
-  };
+  }
 
-  // Summarization using Chrome's AI API
-  const summarizeText = async (text) => {
+  async function getTranslation(text, targetLang) {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
     try {
-      const processor = new TextProcessor();
-      const summary = await processor.summarize(text);
-      return summary.summary;
+      const response = await fetch(url);
+      const data = await response.json();
+      return data[0].map((item) => item[0]).join(" ") || "Translation unavailable.";
     } catch (error) {
-      console.error("Summarization error:", error);
-      alert("Failed to summarize text.");
-      return "";
+      return "Translation unavailable.";
     }
-  };
+  }
 
-  // Translation using Chrome's AI API
-  const translateText = async (text, targetLanguage) => {
-    try {
-      const processor = new TextProcessor();
-      const translation = await processor.translate(text, targetLanguage);
-      return translation.text;
-    } catch (error) {
-      console.error("Translation error:", error);
-      alert("Failed to translate text.");
-      return "";
-    }
-  };
+  function summarizeText(inputText, numSentences = 3) {
+    const sentences = inputText.split(". ");
+    if (sentences.length <= numSentences) return inputText;
+
+    const wordCounts = {};
+    inputText
+      .toLowerCase()
+      .match(/\b(\w+)\b/g)
+      .forEach((word) => {
+        wordCounts[word] = (wordCounts[word] || 0) + 1;
+      });
+
+    const scoredSentences = sentences.map((sentence) => {
+      const words = sentence.toLowerCase().match(/\b(\w+)\b/g) || [];
+      return {
+        sentence,
+        score: words.reduce((sum, word) => sum + (wordCounts[word] || 0), 0),
+      };
+    });
+
+    return (
+      scoredSentences
+        .sort((a, b) => b.score - a.score)
+        .slice(0, numSentences)
+        .map((s) => s.sentence)
+        .join(". ") + "."
+    );
+  }
 
   return (
-    <div className="flex flex-col h-screen p-4 bg-gray-100">
-      {/* Output Area */}
-      <div className="flex-1 overflow-y-auto mb-4 p-4 bg-white border rounded shadow">
-        <p className="text-gray-800">{outputText}</p>
-        {detectedLanguage && (
-          <p className="text-sm text-gray-500 mt-2">Detected Language: {detectedLanguage}</p>
-        )}
-        {summary && (
-          <div className="mt-4">
-            <p className="font-semibold text-gray-800">Summary:</p>
-            <p className="text-gray-700">{summary}</p>
-          </div>
-        )}
-        {translation && (
-          <div className="mt-4">
-            <p className="font-semibold text-gray-800">Translation:</p>
-            <p className="text-gray-700">{translation}</p>
-          </div>
-        )}
+    <div className="p-4">
+       <div class="bg-gray-500 p-4 text-white text-center font-bold text-lg">
+        AI Text Processor
       </div>
-
-      <div className="flex gap-2">
-        <textarea
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Type or paste text here"
-          className="flex-1 p-2 border rounded resize-none"
-          rows={3}
-        />
-        <button
-          onClick={handleSend}
-          className="p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          aria-label="Send message"
-        >
-          Send
+      <div className="border p-4 h-64 sm:h-96 overflow-auto mb-4 bg-gray-100">
+        {messages.map((msg, index) => (
+          <div key={index} className="mb-2">
+            <strong>{msg.sender}:</strong> {msg.text}
+          </div>
+        ))}
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className="w-full h-1/2 p-2 border rounded"
+        placeholder="Enter text..."
+      ></textarea>
+      <button onClick={handleSend} className="mt-2 px-4 py-2 bg-blue-500 text-white rounded">
+        Send
+      </button>
+      {showSummarizeButton && (
+        <button onClick={handleSummarize} className="mt-2 ml-2 px-4 py-2 bg-purple-500 text-white rounded">
+          Summarize
         </button>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="mt-4 flex gap-2">
-        {outputText.length > 150 && detectedLanguage === "en" && (
-          <button
-            onClick={handleSummarize}
-            className="p-2 bg-green-500 text-white rounded hover:bg-green-600"
+      )}
+      {showTranslateButton && (
+        <div className="mt-2 flex items-center gap-2">
+          <select
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value)}
+            className="p-2 rounded-md border border-gray-300"
           >
-            Summarize
+            {["en", "pt", "es", "ru", "tr", "fr"].map((lang) => (
+              <option key={lang} value={lang}>{lang.toUpperCase()}</option>
+            ))}
+          </select>
+          <button onClick={handleTranslate} className="px-4 py-2 bg-yellow-500 text-white rounded">
+            Translate
           </button>
-        )}
-        <select
-          value={targetLanguage}
-          onChange={(e) => setTargetLanguage(e.target.value)}
-          className="p-2 border rounded"
-        >
-          <option value="en">English</option>
-          <option value="pt">Portuguese</option>
-          <option value="es">Spanish</option>
-          <option value="ru">Russian</option>
-          <option value="tr">Turkish</option>
-          <option value="fr">French</option>
-        </select>
-        <button
-          onClick={handleTranslate}
-          className="p-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-        >
-          Translate
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
